@@ -1,71 +1,59 @@
-import 'dart:io';
-import 'package:csv/csv.dart';
+import 'package:hive/hive.dart';
 import 'goal.dart';
-import 'package:path_provider/path_provider.dart';
 
 class GoalManager {
-  List<Goal> availableGoals = [];
-  late File file;
+  static const String boxName = 'goalsBox';
+  late Box<Goal> _goalBox;
 
   GoalManager._();
 
+  /// Factory to initialize GoalManager with Hive box
   static Future<GoalManager> create() async {
-    GoalManager gm = GoalManager._();
-    final dir = await getApplicationDocumentsDirectory();
-
-    final path = '${dir.path}/goals.csv';
-    gm.file = File(path);
-    await gm.loadFile();
-    return gm;
+    final manager = GoalManager._();
+    manager._goalBox = await Hive.openBox<Goal>(boxName);
+    return manager;
   }
 
-  Future<void> loadFile() async {
-    if (!await file.exists()) {
-      await file.create(recursive: true);
-      await file.writeAsString('');
-      availableGoals = [];
-      return;
+  /// All goals as a list
+  List<Goal> get availableGoals => _goalBox.values.toList();
+
+  /// Add a new goal (avoids duplicate names)
+  Future<void> addGoal(Goal goal) async {
+    // optional: avoid duplicates by name
+    if (!availableGoals.any((g) => g.name == goal.name)) {
+      await _goalBox.add(goal);
     }
+  }
 
-    final csvString = await file.readAsString();
-    if (csvString.isEmpty) {
-      availableGoals = [];
-      return;
+  /// Remove a goal by name
+  Future<void> removeGoal(String name) async {
+    final key = _goalBox.keys.firstWhere(
+      (k) => (_goalBox.get(k)?.name == name),
+      orElse: () => null,
+    );
+    if (key != null) await _goalBox.delete(key);
+  }
+
+  /// Get goal by name
+  Goal? getGoalByName(String name) {
+    try {
+      return _goalBox.values.firstWhere((g) => g.name == name);
+    } catch (_) {
+      return null;
     }
-
-    final rows = const CsvToListConverter().convert(csvString);
-
-    availableGoals = rows
-        .map((row) => Goal(
-              name: row[0].toString(),
-              description: row[1].toString(),
-            ))
-        .toList();
   }
 
-  Future<void> saveFile() async {
-    List<List<dynamic>> rows = availableGoals.map((goal) => goal.toCsvRow()).toList();
-    String csv = const ListToCsvConverter().convert(rows);
-
-    if (!await file.parent.exists()) await file.parent.create(recursive: true);
-    await file.writeAsString(csv);
-    print("Goals saved.");
-  }
-
-  /// Creates a new goal by prompting the user for input in the terminal.
-  /// - Uses [Goal.fromUserInput()] to interactively build a new goal.
-  /// - Ensures no duplicate goal names are added.
-  /// - Automatically saves the updated goal list to file.
-  void createGoal() {
-    // Collect goal data interactively
-    Goal goal = Goal.fromUserInput();
-
-    // Avoid duplicate goals based on name
-    if (!availableGoals.any((i) => i.name == goal.name)) {
-      availableGoals.add(goal);
+  /// Update existing goal by old name
+  Future<void> updateGoal(String oldName, Goal updatedGoal) async {
+    final key = _goalBox.keys.firstWhere(
+      (k) => (_goalBox.get(k)?.name == oldName),
+      orElse: () => null,
+    );
+    if (key != null) {
+      await _goalBox.put(key, updatedGoal);
     }
-
-    saveFile();
-    print("Goal '${goal.name}' added successfully.");
   }
+
+  /// Clear all goals
+  Future<void> clearAll() async => await _goalBox.clear();
 }

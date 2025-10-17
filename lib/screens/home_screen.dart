@@ -3,9 +3,11 @@ import 'package:flutter/material.dart';
 import '../core/calendar.dart';
 import '../core/event.dart';
 import '../core/goal.dart';
-import 'edit_event_screen.dart'; // <-- Make sure you create this file next
+import 'edit_event_screen.dart';
 
 class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
+
   @override
   _HomeScreenState createState() => _HomeScreenState();
 }
@@ -13,7 +15,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   late Calendar calendar;
   bool loading = true;
-  final EventController eventController = EventController();
+  late EventController eventController;
 
   @override
   void initState() {
@@ -23,37 +25,34 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _loadCalendar() async {
     final c = await Calendar.create();
-    setState(() {
-      calendar = c;
-      loading = false;
-    });
+    setState(() => calendar = c);
 
-    // Load events into controller
-    calendar.events.forEach((date, events) {
-      for (var event in events) {
-        eventController.add(
-          CalendarEventData(
-            date: event.date,
-            title: event.name,
-            description: event.description,
-          ),
-        );
-      }
-    });
+    eventController = EventController();
+
+    for (var event in calendar.allEvents) {
+      eventController.add(
+        CalendarEventData(
+          startTime: event.date,
+          endTime: event.endDateTime,
+          date: event.date,
+          title: event.name,
+          description: event.description,
+        ),
+      );
+    }
+
+    setState(() => loading = false);
   }
 
-  // When returning from the EventScreen, reload the events
   Future<void> _refreshCalendar() async {
-    setState(() {
-      loading = true;
-    });
+    setState(() => loading = true);
     await _loadCalendar();
   }
 
   @override
   Widget build(BuildContext context) {
     if (loading) {
-      return Scaffold(
+      return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
       );
     }
@@ -64,20 +63,22 @@ class _HomeScreenState extends State<HomeScreen> {
         controller: eventController,
         heightPerMinute: 1,
         showVerticalLine: true,
-        onEventTap: (events, date) {
+        onEventTap: (events, date) async {
           if (events.isNotEmpty) {
             final tappedEvent = events.first;
             final event = calendar.getEventByName(tappedEvent.title);
             if (event != null) {
-              Navigator.push(
+              await Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (_) => EditEventScreen(
                     calendar: calendar,
                     eventController: eventController,
+                    existingEvent: event,
                   ),
                 ),
-              ).then((_) => _refreshCalendar());
+              );
+              _refreshCalendar();
             }
           }
         },
@@ -88,7 +89,10 @@ class _HomeScreenState extends State<HomeScreen> {
           await Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => EditEventScreen(calendar: calendar, eventController: eventController),
+              builder: (_) => EditEventScreen(
+                calendar: calendar,
+                eventController: eventController,
+              ),
             ),
           );
           _refreshCalendar();
