@@ -15,6 +15,13 @@ void main() async {
   // Open boxes
   await Hive.openBox<Event>('eventsBox');
   await Hive.openBox<Goal>('goalsBox');
+  
+  // Uncomment below to remove events from hive.
+
+  // final goalsBox = Hive.box<Goal>('goalsBox');
+  // final eventsBox = Hive.box<Event>('eventsBox');
+  // await goalsBox.clear();
+  // await eventsBox.clear();
 
   runApp(const MyApp());
 }
@@ -26,7 +33,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Calendar App',
-      theme: ThemeData(primarySwatch: Colors.green),
+      theme: ThemeData(primarySwatch: Colors.blue),
       home: HomeScreen(),
     );
   }

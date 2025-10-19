@@ -20,9 +20,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool loading = true;
   late EventController eventController;
   MinuteSlotSize currentSlotSize = MinuteSlotSize.minutes60;
-  int _currentIndex = 0; // 0 = Calendar, 1 = Goals, 2 = Goal Tracker
-
-  // Track the currently displayed date in DayView
+  int _currentIndex = 0;
   DateTime _currentDisplayedDate = DateTime.now();
 
   @override
@@ -33,29 +31,36 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadCalendar() async {
-    final c = await Calendar.create();
-    calendar = c;
+    calendar = await Calendar.create();
     _refreshEventController();
     setState(() => loading = false);
   }
 
   void _refreshEventController() {
-    if (eventController.events.isNotEmpty) {
-      eventController.removeAll(
-        List<CalendarEventData>.from(eventController.events),
-      );
-    }
+    eventController.removeAll(List<CalendarEventData>.from(eventController.events));
 
     for (var event in calendar.allEvents) {
+      final bgColor = event.linkedGoal?.color != null
+          ? Color(event.linkedGoal!.color)
+          : Colors.blue;
+
       eventController.add(
         CalendarEventData(
           date: event.date,
           startTime: event.date,
-          endTime: event.endDateTime ?? event.date.add(const Duration(hours: 1)),
+          endTime: event.allDay ? null : (event.endDateTime ?? event.date.add(const Duration(hours: 1))),
           title: event.name,
           description: event.description,
-          // Flag all-day events if endDateTime is null
-          // allDay: event.endDateTime == null,
+          color: bgColor,
+          titleStyle: const TextStyle(
+            height: 0.5,
+            color: Colors.white,
+            fontSize: 20,
+          ),
+          descriptionStyle: const TextStyle(
+            height: 1,
+            color: Color.fromARGB(184, 255, 255, 255),
+          ),
         ),
       );
     }
@@ -63,13 +68,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void toggleSlotSize() {
     setState(() {
-      if (currentSlotSize == MinuteSlotSize.minutes60) {
-        currentSlotSize = MinuteSlotSize.minutes30;
-      } else if (currentSlotSize == MinuteSlotSize.minutes30) {
-        currentSlotSize = MinuteSlotSize.minutes15;
-      } else {
-        currentSlotSize = MinuteSlotSize.minutes60;
-      }
+      currentSlotSize = currentSlotSize == MinuteSlotSize.minutes60
+          ? MinuteSlotSize.minutes30
+          : currentSlotSize == MinuteSlotSize.minutes30
+              ? MinuteSlotSize.minutes15
+              : MinuteSlotSize.minutes60;
     });
   }
 
@@ -81,26 +84,35 @@ class _HomeScreenState extends State<HomeScreen> {
         return '30m';
       case MinuteSlotSize.minutes15:
         return '15m';
-      default:
-        return '';
     }
   }
 
   double getHeightPerMinute() {
     switch (currentSlotSize) {
       case MinuteSlotSize.minutes60:
-        return 2.5;
+        return 1.5;
       case MinuteSlotSize.minutes30:
-        return 5.0;
+        return 3.0;
       case MinuteSlotSize.minutes15:
         return 10.0;
-      default:
-        return 2.0;
     }
   }
 
   bool showHalfHours() => currentSlotSize != MinuteSlotSize.minutes60;
   bool showQuarterHours() => currentSlotSize == MinuteSlotSize.minutes15;
+
+  Future<void> _pickDateFromMonthView() async {
+    final selectedDate = await showDatePicker(
+      context: context,
+      initialDate: _currentDisplayedDate,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+    );
+
+    if (selectedDate != null) {
+      setState(() => _currentDisplayedDate = selectedDate);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -120,7 +132,9 @@ class _HomeScreenState extends State<HomeScreen> {
       body: screens[_currentIndex],
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
-        onTap: (index) => setState(() => _currentIndex = index),
+        onTap: (index) {
+          setState(() => _currentIndex = index);
+        },
         items: const [
           BottomNavigationBarItem(
             icon: Icon(Icons.calendar_today),
@@ -144,8 +158,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   _currentDisplayedDate.year,
                   _currentDisplayedDate.month,
                   _currentDisplayedDate.day,
-                  0,
-                  0,
                 );
 
                 await Navigator.push(
@@ -168,12 +180,47 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildCalendarView() {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("My Calendar"),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(width: 6),
+            // Calendar Icon with larger invisible touch area
+            GestureDetector(
+              onTap: _pickDateFromMonthView,
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                color: Colors.transparent,
+                child: const Icon(Icons.calendar_today, size: 20),
+              ),
+            ),
+            const SizedBox(width: 8),
+            // Today button
+            GestureDetector(
+              onTap: () {
+                setState(() {
+                  _currentDisplayedDate = DateTime.now();
+                });
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.blueAccent,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Text(
+                  'Today',
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+          ],
+        ),
         actions: [
+          // Slot size toggle icon with larger touch area
           GestureDetector(
             onTap: toggleSlotSize,
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.all(12),
               color: Colors.transparent,
               child: Row(
                 children: [
@@ -182,7 +229,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   Text(
                     getSlotSizeLabel(),
                     style: const TextStyle(
-                        fontWeight: FontWeight.bold, color: Colors.black),
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
+                    ),
                   ),
                 ],
               ),
@@ -191,31 +240,22 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
       body: DayView<Object?>(
-        key: ValueKey(currentSlotSize),
+        key: ValueKey(_currentDisplayedDate), // rebuild when date changes
         controller: eventController,
         heightPerMinute: getHeightPerMinute(),
         showVerticalLine: true,
         minuteSlotSize: currentSlotSize,
         showHalfHours: showHalfHours(),
         showQuarterHours: showQuarterHours(),
+        initialDay: _currentDisplayedDate,
         hourIndicatorSettings: const HourIndicatorSettings(color: Colors.grey),
-        halfHourIndicatorSettings:
-            const HourIndicatorSettings(color: Colors.grey),
-        quarterHourIndicatorSettings:
-            const HourIndicatorSettings(color: Colors.grey),
-        dateStringBuilder: (date, {secondaryDate}) =>
-            DateFormat('EEEE, MMM d, yyyy').format(date),
-        timeStringBuilder: (time, {secondaryDate}) =>
-            DateFormat('h:mm a').format(time),
-
-        /// Track currently displayed date
+        halfHourIndicatorSettings: const HourIndicatorSettings(color: Colors.grey),
+        quarterHourIndicatorSettings: const HourIndicatorSettings(color: Colors.grey),
+        dateStringBuilder: (date, {secondaryDate}) => DateFormat('EEEE, MMM d, yyyy').format(date),
+        timeStringBuilder: (time, {secondaryDate}) => DateFormat('h:mm a').format(time),
         onPageChange: (date, pageIndex) {
-          setState(() {
-            _currentDisplayedDate = date;
-          });
+          setState(() => _currentDisplayedDate = date);
         },
-
-        /// Tap empty timeslot
         onDateTap: (date) async {
           await Navigator.push(
             context,
@@ -229,8 +269,6 @@ class _HomeScreenState extends State<HomeScreen> {
           );
           _loadCalendar();
         },
-
-        /// Tap existing event
         onEventTap: (events, date) async {
           if (events.isNotEmpty) {
             final tappedEvent = events.first;
@@ -250,25 +288,44 @@ class _HomeScreenState extends State<HomeScreen> {
             }
           }
         },
-
-        /// Full-day events show at the top row
         fullDayEventBuilder: (events, date) {
           if (events.isEmpty) return const SizedBox.shrink();
+
           return SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
               children: events.map((event) {
-                return Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 4),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.blueAccent,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                    event.title,
-                    style: const TextStyle(color: Colors.white),
+                final realEvent = calendar.getEventByName(event.title);
+                final bgColor = realEvent?.linkedGoal?.color != null
+                    ? Color(realEvent!.linkedGoal!.color)
+                    : Colors.blue;
+
+                return GestureDetector(
+                  onTap: () {
+                    if (realEvent != null) {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => EditEventScreen(
+                            calendar: calendar,
+                            eventController: eventController,
+                            existingEvent: realEvent,
+                          ),
+                        ),
+                      ).then((_) => _loadCalendar());
+                    }
+                  },
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: bgColor,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      event.title,
+                      style: const TextStyle(color: Colors.white),
+                    ),
                   ),
                 );
               }).toList(),

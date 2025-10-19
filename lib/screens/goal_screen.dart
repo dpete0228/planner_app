@@ -16,6 +16,16 @@ class _GoalScreenState extends State<GoalScreen> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _descController = TextEditingController();
   bool _loading = true;
+  Color _selectedColor = Colors.blue; // Default selected color
+
+  final List<Color> _predefinedColors = [
+    Colors.red,
+    Colors.green,
+    Colors.blue,
+    Colors.orange,
+    Colors.purple,
+    Colors.teal,
+  ];
 
   @override
   void initState() {
@@ -36,22 +46,167 @@ class _GoalScreenState extends State<GoalScreen> {
   }
 
   Future<void> _addGoal() async {
-    final name = _nameController.text.trim();
-    final desc = _descController.text.trim();
-
-    if (name.isEmpty) return;
-
-    // Avoid duplicate goal names
-    if (_goalsBox.values.any((g) => g.name == name)) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text("Goal already exists")));
-      return;
-    }
-
-    await _goalsBox.add(Goal(name: name, description: desc));
     _nameController.clear();
     _descController.clear();
-    setState(() {});
+    _selectedColor = Colors.blue;
+
+    await showDialog(
+      context: context,
+      builder: (_) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text("Add Goal"),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: _nameController,
+                decoration: const InputDecoration(labelText: "Goal Name"),
+              ),
+              TextField(
+                controller: _descController,
+                decoration: const InputDecoration(labelText: "Description"),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                children: _predefinedColors.map((c) {
+                  return GestureDetector(
+                    onTap: () => setDialogState(() => _selectedColor = c),
+                    child: Container(
+                      width: 30,
+                      height: 30,
+                      decoration: BoxDecoration(
+                        color: c,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: _selectedColor == c
+                              ? Colors.black
+                              : Colors.transparent,
+                          width: 2,
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("Cancel"),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final name = _nameController.text.trim();
+                final desc = _descController.text.trim();
+                if (name.isEmpty) return;
+
+                if (_goalsBox.values.any((g) => g.name == name)) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("Goal already exists")),
+                  );
+                  return;
+                }
+
+                await _goalsBox.add(Goal(
+                  name: name,
+                  description: desc,
+                  color: _selectedColor.value,
+                ));
+
+                Navigator.pop(context);
+                setState(() {});
+              },
+              child: const Text("Add"),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _editGoal(int index) async {
+    final goal = _goalsBox.getAt(index);
+    if (goal == null || _eventsBox == null) return;
+
+    _nameController.text = goal.name;
+    _descController.text = goal.description;
+    _selectedColor = Color(goal.color);
+
+    await showDialog(
+      context: context,
+      builder: (_) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text("Edit Goal"),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: _nameController,
+                decoration: const InputDecoration(labelText: "Goal Name"),
+              ),
+              TextField(
+                controller: _descController,
+                decoration: const InputDecoration(labelText: "Description"),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                children: _predefinedColors.map((c) {
+                  return GestureDetector(
+                    onTap: () => setDialogState(() => _selectedColor = c),
+                    child: Container(
+                      width: 30,
+                      height: 30,
+                      decoration: BoxDecoration(
+                        color: c,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: _selectedColor == c
+                              ? Colors.black
+                              : Colors.transparent,
+                          width: 2,
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("Cancel"),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final newName = _nameController.text.trim();
+                final newDesc = _descController.text.trim();
+                if (newName.isEmpty) return;
+
+                goal.name = newName;
+                goal.description = newDesc;
+                goal.color = _selectedColor.value;
+                await goal.save();
+
+                final linkedEvents = _eventsBox!.values.where(
+                    (e) => e.linkedGoal != null && e.linkedGoal!.key == goal.key);
+                for (var event in linkedEvents) {
+                  event.linkedGoal = goal;
+                  await event.save();
+                }
+
+                Navigator.pop(context);
+                setState(() {});
+              },
+              child: const Text("Save"),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _deleteGoal(int index) async {
@@ -68,66 +223,6 @@ class _GoalScreenState extends State<GoalScreen> {
     }
   }
 
-  Future<void> _editGoal(int index) async {
-    final goal = _goalsBox.getAt(index);
-    if (goal == null || _eventsBox == null) return;
-
-    _nameController.text = goal.name;
-    _descController.text = goal.description;
-
-    await showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Edit Goal"),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: _nameController,
-              decoration: const InputDecoration(labelText: "Goal Name"),
-            ),
-            TextField(
-              controller: _descController,
-              decoration: const InputDecoration(labelText: "Description"),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Cancel"),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final newName = _nameController.text.trim();
-              final newDesc = _descController.text.trim();
-              if (newName.isEmpty) return;
-
-              // Update goal
-              goal.name = newName;
-              goal.description = newDesc;
-              await goal.save();
-
-              // Update linked events
-              final linkedEvents = _eventsBox!.values
-                  .where((e) => e.linkedGoal != null && e.linkedGoal!.key == goal.key);
-              for (var event in linkedEvents) {
-                event.linkedGoal = goal;
-                await event.save();
-              }
-
-              _nameController.clear();
-              _descController.clear();
-              Navigator.pop(context);
-              setState(() {});
-            },
-            child: const Text("Save"),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -139,33 +234,37 @@ class _GoalScreenState extends State<GoalScreen> {
     final goals = _goalsBox.values.toList();
 
     return Scaffold(
-      appBar: AppBar(title: const Text("Manage Goals")),
+      appBar: AppBar(
+        title: const Text("Manage Goals"),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.add),
+            onPressed: _addGoal,
+          ),
+        ],
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
-            // Add Goal
-            TextField(
-              controller: _nameController,
-              decoration: const InputDecoration(labelText: "Goal Name"),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _descController,
-              decoration: const InputDecoration(labelText: "Description"),
-            ),
-            const SizedBox(height: 8),
-            ElevatedButton(
-              onPressed: _addGoal,
-              child: const Text("Add Goal"),
-            ),
-            const SizedBox(height: 16),
             Expanded(
               child: ListView.builder(
                 itemCount: goals.length,
                 itemBuilder: (_, index) {
                   final goal = goals[index];
                   return ListTile(
+                    leading: Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: Color(goal.color),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Colors.black,
+                          width: 2,
+                        ),
+                      ),
+                    ),
                     title: Text(goal.name),
                     subtitle: Text(goal.description),
                     trailing: Row(

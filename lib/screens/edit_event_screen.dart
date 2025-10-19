@@ -52,10 +52,8 @@ class _EditEventScreenState extends State<EditEventScreen> {
     _selectedDate = baseDate;
     _startTime = TimeOfDay.fromDateTime(baseDate);
 
-    // Determine if event is all-day
     _allDay = existing?.allDay ?? false;
 
-    // Set end time automatically if not all-day
     if (!_allDay) {
       _endTime = existing?.endDateTime != null
           ? TimeOfDay.fromDateTime(existing!.endDateTime!)
@@ -222,12 +220,23 @@ class _EditEventScreenState extends State<EditEventScreen> {
               ),
               const SizedBox(height: 24),
 
-              // Save
+              // Save Button
               ElevatedButton.icon(
                 icon: const Icon(Icons.save),
                 label: Text(isEditing ? "Save Changes" : "Add Event"),
                 onPressed: _saveEvent,
               ),
+
+              // Delete Button (only for editing)
+              if (isEditing) ...[
+                const SizedBox(height: 16),
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.delete),
+                  label: const Text("Delete Event"),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                  onPressed: _deleteEvent,
+                ),
+              ],
             ],
           ),
         ),
@@ -299,6 +308,44 @@ class _EditEventScreenState extends State<EditEventScreen> {
         description: _descController.text,
       ),
     );
+
+    if (mounted) Navigator.pop(context, true);
+  }
+
+  Future<void> _deleteEvent() async {
+    if (!isEditing) return;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text("Delete Event?"),
+        content: const Text("This will permanently delete the event."),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text("Delete"),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    final existing = widget.existingEvent!;
+
+    // Remove from Hive
+    final key = widget.calendar.eventBox.keys.firstWhere(
+      (k) => widget.calendar.eventBox.get(k) == existing,
+      orElse: () => null,
+    );
+    if (key != null) await widget.calendar.eventBox.delete(key);
+
+    // Remove from controller so UI updates
+    widget.eventController.removeWhere((e) => e.title == existing.name);
 
     if (mounted) Navigator.pop(context, true);
   }
