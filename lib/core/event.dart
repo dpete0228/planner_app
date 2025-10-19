@@ -20,6 +20,12 @@ class Event extends HiveObject {
   @HiveField(4)
   Goal? linkedGoal;
 
+  @HiveField(5)
+  bool isCompleted = false;
+
+  @HiveField(6)
+  bool allDay = false;
+
   Event({
     required this.date,
     this.endDateTime,

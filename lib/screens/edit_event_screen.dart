@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:calendar_view/calendar_view.dart';
 import 'package:hive/hive.dart';
+import 'package:intl/intl.dart';
 import '../core/calendar.dart';
 import '../core/event.dart';
 import '../core/goal.dart';
@@ -9,12 +10,14 @@ class EditEventScreen extends StatefulWidget {
   final Calendar calendar;
   final EventController eventController;
   final Event? existingEvent;
+  final DateTime? initialDate;
 
   const EditEventScreen({
     super.key,
     required this.calendar,
     required this.eventController,
     this.existingEvent,
+    this.initialDate,
   });
 
   @override
@@ -27,9 +30,10 @@ class _EditEventScreenState extends State<EditEventScreen> {
   late TextEditingController _nameController;
   late TextEditingController _descController;
   Goal? _selectedGoal;
-  DateTime _selectedDate = DateTime.now();
-  TimeOfDay _startTime = TimeOfDay.now();
-  TimeOfDay? _endTime; // optional end time
+  late DateTime _selectedDate;
+  late TimeOfDay _startTime;
+  TimeOfDay? _endTime;
+  bool _allDay = false;
 
   Box<Goal>? _goalsBox;
   bool _loadingGoals = true;
@@ -40,15 +44,28 @@ class _EditEventScreenState extends State<EditEventScreen> {
   void initState() {
     super.initState();
     final existing = widget.existingEvent;
+    final baseDate = existing?.date ?? widget.initialDate ?? DateTime.now();
 
     _nameController = TextEditingController(text: existing?.name ?? '');
     _descController = TextEditingController(text: existing?.description ?? '');
     _selectedGoal = existing?.linkedGoal;
-    _selectedDate = existing?.date ?? DateTime.now();
-    _startTime = TimeOfDay.fromDateTime(existing?.date ?? DateTime.now());
-    _endTime = existing?.endDateTime != null
-        ? TimeOfDay.fromDateTime(existing!.endDateTime!)
-        : null;
+    _selectedDate = baseDate;
+    _startTime = TimeOfDay.fromDateTime(baseDate);
+
+    // Determine if event is all-day
+    _allDay = existing?.allDay ?? false;
+
+    // Set end time automatically if not all-day
+    if (!_allDay) {
+      _endTime = existing?.endDateTime != null
+          ? TimeOfDay.fromDateTime(existing!.endDateTime!)
+          : TimeOfDay(
+              hour: (_startTime.hour + ((_startTime.minute + 30) ~/ 60)) % 24,
+              minute: (_startTime.minute + 30) % 60,
+            );
+    } else {
+      _endTime = null;
+    }
 
     _loadGoals();
   }
@@ -81,7 +98,7 @@ class _EditEventScreenState extends State<EditEventScreen> {
           key: _formKey,
           child: ListView(
             children: [
-              // Event name
+              // Name
               TextFormField(
                 controller: _nameController,
                 decoration: const InputDecoration(
@@ -104,10 +121,10 @@ class _EditEventScreenState extends State<EditEventScreen> {
               ),
               const SizedBox(height: 16),
 
-              // Date picker
+              // Date
               ListTile(
                 title: Text(
-                  "Date: ${_selectedDate.toLocal().toString().split(' ')[0]}",
+                  "Date: ${DateFormat('EEEE, MMMM d, yyyy').format(_selectedDate)}",
                 ),
                 trailing: const Icon(Icons.calendar_today),
                 onTap: () async {
@@ -121,62 +138,91 @@ class _EditEventScreenState extends State<EditEventScreen> {
                 },
               ),
 
-              // Start time picker
-              ListTile(
-                title: Text("Start Time: ${_startTime.format(context)}"),
-                trailing: const Icon(Icons.access_time),
-                onTap: () async {
-                  final picked = await showTimePicker(
-                    context: context,
-                    initialTime: _startTime,
-                  );
-                  if (picked != null) setState(() => _startTime = picked);
+              // All-Day Checkbox
+              CheckboxListTile(
+                title: const Text("All Day"),
+                value: _allDay,
+                onChanged: (value) {
+                  setState(() {
+                    _allDay = value ?? false;
+                    if (_allDay) {
+                      _endTime = null;
+                    } else {
+                      _endTime ??= TimeOfDay(
+                        hour: _startTime.hour,
+                        minute: (_startTime.minute + 30) % 60,
+                      );
+                    }
+                  });
                 },
               ),
 
-              // Optional end time picker
+              // Start Time
               ListTile(
                 title: Text(
-                    "End Time: ${(_endTime ?? _startTime).format(context)}"),
+                    "Start Time: ${_allDay ? '--:--' : _startTime.format(context)}"),
                 trailing: const Icon(Icons.access_time),
-                onTap: () async {
-                  final picked = await showTimePicker(
-                    context: context,
-                    initialTime: _endTime ?? _startTime,
-                  );
-                  if (picked != null) setState(() => _endTime = picked);
-                },
+                enabled: !_allDay,
+                onTap: !_allDay
+                    ? () async {
+                        final picked = await showTimePicker(
+                          context: context,
+                          initialTime: _startTime,
+                        );
+                        if (picked != null) {
+                          setState(() {
+                            _startTime = picked;
+                            _endTime = TimeOfDay(
+                              hour: (picked.hour +
+                                      ((_startTime.minute + 30) ~/ 60)) %
+                                  24,
+                              minute: (picked.minute + 30) % 60,
+                            );
+                          });
+                        }
+                      }
+                    : null,
               ),
 
+              // End Time (readonly)
+              ListTile(
+                title: Text(
+                    "End Time: ${_allDay ? '--:--' : (_endTime ?? _startTime).format(context)}"),
+                trailing: const Icon(Icons.access_time),
+                enabled: !_allDay,
+              ),
               const SizedBox(height: 16),
 
-              // Goal selection
-              DropdownButtonFormField<Goal?>(
-                value: _selectedGoal,
+              // Linked Goal
+              DropdownButtonFormField<int?>(
+                value: _selectedGoal?.key as int?,
                 isExpanded: true,
                 decoration: const InputDecoration(
                   labelText: "Linked Goal",
                   border: OutlineInputBorder(),
                 ),
                 items: [
-                  const DropdownMenuItem<Goal?>(
+                  const DropdownMenuItem<int?>(
                     value: null,
                     child: Text("None"),
                   ),
                   ...goalOptions.map(
-                    (goal) => DropdownMenuItem<Goal?>(
-                      value: goal,
+                    (goal) => DropdownMenuItem<int?>(
+                      value: goal.key as int,
                       child: Text(goal.name),
                     ),
                   ),
                 ],
-                onChanged: (newValue) {
-                  setState(() => _selectedGoal = newValue);
+                onChanged: (newKey) {
+                  setState(() {
+                    _selectedGoal =
+                        newKey != null ? _goalsBox!.get(newKey) : null;
+                  });
                 },
               ),
               const SizedBox(height: 24),
 
-              // Save button
+              // Save
               ElevatedButton.icon(
                 icon: const Icon(Icons.save),
                 label: Text(isEditing ? "Save Changes" : "Add Event"),
@@ -192,21 +238,29 @@ class _EditEventScreenState extends State<EditEventScreen> {
   Future<void> _saveEvent() async {
     if (!_formKey.currentState!.validate()) return;
 
-    final startDateTime = DateTime(
-      _selectedDate.year,
-      _selectedDate.month,
-      _selectedDate.day,
-      _startTime.hour,
-      _startTime.minute,
-    );
+    DateTime startDateTime;
+    DateTime? endDateTime;
 
-    final endDateTime = DateTime(
-      _selectedDate.year,
-      _selectedDate.month,
-      _selectedDate.day,
-      (_endTime ?? _startTime).hour,
-      (_endTime ?? _startTime).minute,
-    );
+    if (_allDay) {
+      startDateTime = DateTime(
+          _selectedDate.year, _selectedDate.month, _selectedDate.day);
+      endDateTime = null;
+    } else {
+      startDateTime = DateTime(
+        _selectedDate.year,
+        _selectedDate.month,
+        _selectedDate.day,
+        _startTime.hour,
+        _startTime.minute,
+      );
+      endDateTime = DateTime(
+        _selectedDate.year,
+        _selectedDate.month,
+        _selectedDate.day,
+        _endTime!.hour,
+        _endTime!.minute,
+      );
+    }
 
     if (isEditing) {
       final existing = widget.existingEvent!;
@@ -215,14 +269,15 @@ class _EditEventScreenState extends State<EditEventScreen> {
       existing.date = startDateTime;
       existing.endDateTime = endDateTime;
       existing.linkedGoal = _selectedGoal;
+      existing.allDay = _allDay;
 
       final key = widget.calendar.eventBox.keys.firstWhere(
         (k) => widget.calendar.eventBox.get(k) == existing,
         orElse: () => null,
       );
-      if (key != null) {
-        await widget.calendar.eventBox.put(key, existing);
-      }
+      if (key != null) await widget.calendar.eventBox.put(key, existing);
+
+      widget.eventController.removeWhere((e) => e.title == existing.name);
     } else {
       final newEvent = Event(
         name: _nameController.text,
@@ -233,15 +288,17 @@ class _EditEventScreenState extends State<EditEventScreen> {
       );
 
       await widget.calendar.addEvent(event: newEvent);
-      widget.eventController.add(
-        CalendarEventData(
-          date: startDateTime,
-          endDate: endDateTime,
-          title: _nameController.text,
-          description: _descController.text,
-        ),
-      );
     }
+
+    widget.eventController.add(
+      CalendarEventData(
+        date: startDateTime,
+        startTime: startDateTime,
+        endTime: endDateTime,
+        title: _nameController.text,
+        description: _descController.text,
+      ),
+    );
 
     if (mounted) Navigator.pop(context, true);
   }
