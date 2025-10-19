@@ -1,16 +1,26 @@
-# planner_app
+# Overview
 
-A new Flutter project.
+My primary objective for this project was to create a fully functional calendar and goal tracking application from the ground up. As a software engineer, this effort served as a comprehensive exercise in mastering several key development areas:
 
-## Getting Started
+[Software Demo Video](http://youtube.link.goes.here)
 
-This project is a starting point for a Flutter application.
+# Development Environment
 
-A few resources to get you started if this is your first Flutter project:
+* IDE: Visual Studio Code (VS Code).
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+* Database: Hive and hive_flutter for fast, local NoSQL persistence of custom data models (Event and Goal).
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+* Calendar UI: calendar_view for managing and displaying the core calendar widgets and event layouts.
+
+* Utilities: intl for date and time formatting.
+
+# Useful Websites
+
+* [Hive Documentation](https://pub.dev/documentation/hive/latest/)
+* [calencar_view Documentation](https://pub.dev/packages/calendar_view)
+* [Flutter Documentation](https://docs.flutter.dev/)
+
+# Future Work
+
+* Implement Cloud Hosting: Migrate the data persistence layer from local Hive to a cloud-hosted database (e.g., Firebase, Supabase) to enable cross-device synchronization and user accounts.
+* Enhanced Stylizing Choices: Introduce new theming options (dark/light mode) and custom color palettes to give users more control over the application's aesthetic.
