@@ -2,7 +2,7 @@
 
 My primary objective for this project was to create a fully functional calendar and goal tracking application from the ground up. As a software engineer, this effort served as a comprehensive exercise in mastering several key development areas:
 
-[Software Demo Video](http://youtube.link.goes.here)
+[Software Demo Video](https://youtu.be/yHDLvyzLJtY)
 
 # Development Environment
 
