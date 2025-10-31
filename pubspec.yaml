@@ -46,6 +46,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   calendar_view: ^1.4.0
   csv: ^5.1.0
+  http: ^1.5.0
 
 dev_dependencies:
   flutter_test:

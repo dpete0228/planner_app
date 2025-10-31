@@ -1,17 +1,15 @@
-// The comments in this code were written by an AI assistant.
+// calendar_app/lib/screens/edit_event_screen.dart (Rewritten to use ApiService)
 
 import 'package:flutter/material.dart';
 import 'package:calendar_view/calendar_view.dart';
-import 'package:hive/hive.dart';
 import 'package:intl/intl.dart';
-import '../core/calendar.dart'; // Custom model for Hive operations and event storage.
-import '../core/event.dart'; // Custom Hive-backed Event data model.
-import '../core/goal.dart'; // Custom Hive-backed Goal data model for linking.
+import '../core/api_service.dart'; // New dependency for remote data calls
+import '../core/event.dart'; // Custom API-backed Event data model.
+import '../core/goal.dart'; // Custom API-backed Goal data model for linking.
 
-/// A screen for creating a new calendar event or editing an existing one.
+/// A screen for creating a new calendar event or editing an existing one,
+/// managing data via a remote API service.
 class EditEventScreen extends StatefulWidget {
-  // Required: The persistent storage/calendar instance to save events to Hive.
-  final Calendar calendar;
   // Required: The controller to update the CalendarView UI after save/delete.
   final EventController eventController;
   // Optional: The event object to be edited (determines 'isEditing' state).
@@ -21,7 +19,7 @@ class EditEventScreen extends StatefulWidget {
 
   const EditEventScreen({
     super.key,
-    required this.calendar,
+    // Removed: required this.calendar,
     required this.eventController,
     this.existingEvent,
     this.initialDate,
@@ -36,6 +34,8 @@ class EditEventScreen extends StatefulWidget {
 class _EditEventScreenState extends State<EditEventScreen> {
   // Global key for form validation.
   final _formKey = GlobalKey<FormState>();
+  // API Service instance for all CRUD operations
+  final ApiService _apiService = ApiService();
 
   // Controllers for text inputs.
   late TextEditingController _nameController;
@@ -51,8 +51,8 @@ class _EditEventScreenState extends State<EditEventScreen> {
   // State to track if the event is an all-day event.
   bool _allDay = false;
 
-  // Hive Box reference for fetching available goals.
-  Box<Goal>? _goalsBox;
+  // Data Source variables
+  List<Goal> _goalOptions = [];
   // Flag to manage the loading state of the goals box.
   bool _loadingGoals = true;
 
@@ -69,8 +69,10 @@ class _EditEventScreenState extends State<EditEventScreen> {
     // Initialize controllers with existing data or empty strings.
     _nameController = TextEditingController(text: existing?.name ?? '');
     _descController = TextEditingController(text: existing?.description ?? '');
+    // The existingEvent already holds the full Goal object from the API fetch.
     _selectedGoal = existing?.linkedGoal;
-    _selectedDate = baseDate;
+
+    _selectedDate = DateTime(baseDate.year, baseDate.month, baseDate.day);
     _startTime = TimeOfDay.fromDateTime(baseDate);
 
     // Initialize all-day status.
@@ -91,32 +93,45 @@ class _EditEventScreenState extends State<EditEventScreen> {
       _endTime = null;
     }
 
-    // Start loading goals from Hive.
+    // Start loading goals from the API.
     _loadGoals();
   }
 
-  /// Opens or retrieves the Hive box for Goal objects and updates the loading state.
-  Future<void> _loadGoals() async {
-    // Check if the box is open, otherwise open it asynchronously.
-    _goalsBox = Hive.isBoxOpen('goalsBox')
-        ? Hive.box<Goal>('goalsBox')
-        : await Hive.openBox<Goal>('goalsBox');
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _descController.dispose();
+    super.dispose();
+  }
 
-    // Update UI once goals are loaded.
-    setState(() => _loadingGoals = false);
+  /// Fetches available Goal objects from the API and updates the loading state.
+  Future<void> _loadGoals() async {
+    try {
+      // Fetch goals from the remote API.
+      _goalOptions = await _apiService.fetchGoals();
+
+      // Ensure the selected goal (if one exists) is the one we loaded from the API list.
+      if (_selectedGoal != null) {
+        _selectedGoal = _goalOptions.firstWhere(
+          (g) => g.id == _selectedGoal!.id,
+          orElse: () =>
+              null!, // If not found (e.g., goal was deleted), set to null.
+        );
+      }
+    } catch (e) {
+      print("Error loading goals from API: $e");
+    } finally {
+      // Update UI once goals are loaded.
+      if (mounted) setState(() => _loadingGoals = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    // Show a loading indicator while goals are being fetched from Hive.
+    // Show a loading indicator while goals are being fetched from the API.
     if (_loadingGoals) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
-
-    // List of goals retrieved from the box for the dropdown.
-    final goalOptions = _goalsBox!.values.toList();
 
     return Scaffold(
       appBar: AppBar(
@@ -136,7 +151,6 @@ class _EditEventScreenState extends State<EditEventScreen> {
                   labelText: "Event Name",
                   border: OutlineInputBorder(),
                 ),
-                // Validation: field must not be empty.
                 validator: (value) =>
                     value == null || value.isEmpty ? "Enter a name" : null,
               ),
@@ -156,12 +170,10 @@ class _EditEventScreenState extends State<EditEventScreen> {
               // Date Picker ListTile
               ListTile(
                 title: Text(
-                  // Display formatted date.
                   "Date: ${DateFormat('EEEE, MMMM d, yyyy').format(_selectedDate)}",
                 ),
                 trailing: const Icon(Icons.calendar_today),
                 onTap: () async {
-                  // Show date picker and update state on selection.
                   final picked = await showDatePicker(
                     context: context,
                     initialDate: _selectedDate,
@@ -179,7 +191,6 @@ class _EditEventScreenState extends State<EditEventScreen> {
                 onChanged: (value) {
                   setState(() {
                     _allDay = value ?? false;
-                    // Reset or set default end time when toggling all-day.
                     if (_allDay) {
                       _endTime = null;
                     } else {
@@ -195,13 +206,12 @@ class _EditEventScreenState extends State<EditEventScreen> {
               // Start Time Picker ListTile
               ListTile(
                 title: Text(
-                    // Display start time, disabled if all-day.
-                    "Start Time: ${_allDay ? '--:--' : _startTime.format(context)}"),
+                  "Start Time: ${_allDay ? '--:--' : _startTime.format(context)}",
+                ),
                 trailing: const Icon(Icons.access_time),
                 enabled: !_allDay,
                 onTap: !_allDay
                     ? () async {
-                        // Show time picker.
                         final picked = await showTimePicker(
                           context: context,
                           initialTime: _startTime,
@@ -211,7 +221,8 @@ class _EditEventScreenState extends State<EditEventScreen> {
                             _startTime = picked;
                             // Recalculate end time (30 min after start, handling day wrap).
                             _endTime = TimeOfDay(
-                              hour: (picked.hour +
+                              hour:
+                                  (picked.hour +
                                       (((picked.minute + 30) ~/ 60))) %
                                   24,
                               minute: (picked.minute + 30) % 60,
@@ -222,20 +233,31 @@ class _EditEventScreenState extends State<EditEventScreen> {
                     : null,
               ),
 
-              // End Time Display ListTile (read-only for simplicity)
+              // End Time Picker ListTile (Now a tap target for time adjustment)
               ListTile(
                 title: Text(
-                    // Display end time, showing start time as fallback/if all-day.
-                    "End Time: ${_allDay ? '--:--' : (_endTime ?? _startTime).format(context)}"),
+                  "End Time: ${_allDay ? '--:--' : (_endTime ?? _startTime).format(context)}",
+                ),
                 trailing: const Icon(Icons.access_time),
                 enabled: !_allDay,
+                onTap: !_allDay
+                    ? () async {
+                        final picked = await showTimePicker(
+                          context: context,
+                          initialTime: _endTime ?? _startTime,
+                        );
+                        if (picked != null) {
+                          setState(() => _endTime = picked);
+                        }
+                      }
+                    : null,
               ),
               const SizedBox(height: 16),
 
               // Linked Goal Dropdown
               DropdownButtonFormField<int?>(
-                // Use the Hive key as the value.
-                value: _selectedGoal?.key as int?,
+                // Use the Goal ID as the value.
+                value: _selectedGoal?.id,
                 isExpanded: true,
                 decoration: const InputDecoration(
                   labelText: "Linked Goal",
@@ -247,19 +269,21 @@ class _EditEventScreenState extends State<EditEventScreen> {
                     value: null,
                     child: Text("None"),
                   ),
-                  // Map goals to dropdown items using their Hive key.
-                  ...goalOptions.map(
+                  // Map goals to dropdown items using their API ID.
+                  ..._goalOptions.map(
                     (goal) => DropdownMenuItem<int?>(
-                      value: goal.key as int,
+                      value: goal.id,
                       child: Text(goal.name),
+                      // Use the goal's color for the text if desired, or a color swatch icon.
                     ),
                   ),
                 ],
-                onChanged: (newKey) {
+                onChanged: (newId) {
                   setState(() {
-                    // Fetch the Goal object from the box using the key.
-                    _selectedGoal =
-                        newKey != null ? _goalsBox!.get(newKey) : null;
+                    // Find the Goal object from the local list using the ID.
+                    _selectedGoal = newId != null
+                        ? _goalOptions.firstWhere((g) => g.id == newId)
+                        : null;
                   });
                 },
               ),
@@ -278,7 +302,10 @@ class _EditEventScreenState extends State<EditEventScreen> {
                 ElevatedButton.icon(
                   icon: const Icon(Icons.delete),
                   label: const Text("Delete Event"),
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red,
+                    foregroundColor: Colors.white,
+                  ),
                   onPressed: _deleteEvent,
                 ),
               ],
@@ -289,7 +316,7 @@ class _EditEventScreenState extends State<EditEventScreen> {
     );
   }
 
-  /// Handles form validation, date/time construction, and saving/updating the event in Hive.
+  /// Handles form validation, date/time construction, and saving/updating the event via API.
   Future<void> _saveEvent() async {
     // Validate the form fields.
     if (!_formKey.currentState!.validate()) return;
@@ -297,14 +324,15 @@ class _EditEventScreenState extends State<EditEventScreen> {
     DateTime startDateTime;
     DateTime? endDateTime;
 
-    // Construct DateTime objects based on the _allDay flag.
+    // 1. Construct DateTime objects
     if (_allDay) {
-      // All-day event starts at midnight.
       startDateTime = DateTime(
-          _selectedDate.year, _selectedDate.month, _selectedDate.day);
+        _selectedDate.year,
+        _selectedDate.month,
+        _selectedDate.day,
+      );
       endDateTime = null;
     } else {
-      // Timed event combines date and time pickers.
       startDateTime = DateTime(
         _selectedDate.year,
         _selectedDate.month,
@@ -319,52 +347,57 @@ class _EditEventScreenState extends State<EditEventScreen> {
         _endTime!.hour,
         _endTime!.minute,
       );
+      // Handle cross-day event logic (end time before start time means it crosses midnight)
+      if (endDateTime.isBefore(startDateTime)) {
+        endDateTime = endDateTime.add(const Duration(days: 1));
+      }
     }
 
-    // Logic for editing an existing event.
+    // 2. Create the Event model instance for API
+    final eventToSave = Event(
+      // CRITICAL: Include the ID only if editing.
+      id: widget.existingEvent?.id,
+      name: _nameController.text,
+      description: _descController.text,
+      date: startDateTime,
+      endDateTime: endDateTime,
+      linkedGoal: _selectedGoal, // The Goal object is passed
+      allDay: _allDay,
+    );
+
+    Event finalEvent;
+
+    // 3. Perform CRUD Operation via API
     if (isEditing) {
-      final existing = widget.existingEvent!;
-      // Update properties of the persistent Hive object.
-      existing.name = _nameController.text;
-      existing.description = _descController.text;
-      existing.date = startDateTime;
-      existing.endDateTime = endDateTime;
-      existing.linkedGoal = _selectedGoal;
-      existing.allDay = _allDay;
-
-      // Find the Hive key associated with the existing object reference.
-      final key = widget.calendar.eventBox.keys.firstWhere(
-        (k) => widget.calendar.eventBox.get(k) == existing,
-        orElse: () => null,
-      );
-      // Save the updated object back to Hive.
-      if (key != null) await widget.calendar.eventBox.put(key, existing);
-
-      // Remove old data from EventController to prevent duplicates/stale data.
-      widget.eventController.removeWhere((e) => e.title == existing.name);
-    } 
-    // Logic for creating a new event.
-    else {
-      final newEvent = Event(
-        name: _nameController.text,
-        description: _descController.text,
-        date: startDateTime,
-        endDateTime: endDateTime,
-        linkedGoal: _selectedGoal,
-      );
-
-      // Add the new event to Hive.
-      await widget.calendar.addEvent(event: newEvent);
+      await _apiService.updateEvent(eventToSave);
+      finalEvent = eventToSave;
+    } else {
+      // API returns the newly created event with its assigned ID
+      finalEvent = await _apiService.addEvent(eventToSave);
     }
 
-    // Add the new/updated event data to the EventController for UI display.
+    // 4. Update the Calendar Controller for UI refresh
+
+    // Clear old event data from the controller if we updated an event.
+    // We use the ID attached to the CalendarEventData's 'event' property.
+    widget.eventController.removeWhere(
+      (e) => (e.event as Event?)?.id == widget.existingEvent?.id,
+    );
+
+    // Add the final, up-to-date event data to the controller.
     widget.eventController.add(
-      CalendarEventData(
-        date: startDateTime,
-        startTime: startDateTime,
-        endTime: endDateTime,
-        title: _nameController.text,
-        description: _descController.text,
+      CalendarEventData<Event>(
+        date: finalEvent.date,
+        startTime: finalEvent.date,
+        endTime: finalEvent.endDateTime,
+        title: finalEvent.name,
+        description: finalEvent.description,
+        // CRITICAL: Attach the full Event model to the CalendarEventData
+        event: finalEvent,
+        // Use the Goal's color if linked, otherwise default to blue.
+        color: finalEvent.linkedGoal?.color != null
+            ? Color(finalEvent.linkedGoal!.color)
+            : Colors.blue,
       ),
     );
 
@@ -372,9 +405,9 @@ class _EditEventScreenState extends State<EditEventScreen> {
     if (mounted) Navigator.pop(context, true);
   }
 
-  /// Displays a confirmation dialog and deletes the event from Hive and the controller.
+  /// Displays a confirmation dialog and deletes the event via API.
   Future<void> _deleteEvent() async {
-    if (!isEditing) return;
+    if (!isEditing || widget.existingEvent?.id == null) return;
 
     // Show confirmation dialog.
     final confirm = await showDialog<bool>(
@@ -395,24 +428,19 @@ class _EditEventScreenState extends State<EditEventScreen> {
       ),
     );
 
-    // If deletion is not confirmed, return.
     if (confirm != true) return;
 
-    final existing = widget.existingEvent!;
+    final existingId = widget.existingEvent!.id!;
 
-    // Remove from Hive (Persistent Storage)
-    final key = widget.calendar.eventBox.keys.firstWhere(
-      (k) => widget.calendar.eventBox.get(k) == existing,
-      orElse: () => null,
+    // 1. Remove from remote API
+    await _apiService.deleteEvent(existingId);
+
+    // 2. Remove from controller so UI updates
+    widget.eventController.removeWhere(
+      (e) => (e.event as Event?)?.id == existingId,
     );
-    // Delete the event using its key.
-    if (key != null) await widget.calendar.eventBox.delete(key);
 
-    // Remove from controller so UI updates
-    // Removes the event from the calendar view to instantly update the UI.
-    widget.eventController.removeWhere((e) => e.title == existing.name);
-
-    // Close the screen upon deletion.
+    // 3. Close the screen upon deletion.
     if (mounted) Navigator.pop(context, true);
   }
 }

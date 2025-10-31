@@ -1,85 +1,58 @@
-// The comments in this code were written by an AI assistant.
+// goal_manager.dart (Rewritten to use ApiService)
 
-import 'package:hive/hive.dart'; // Import Hive for asynchronous, non-relational database operations.
-import 'goal.dart'; // Import the Goal model, which includes the Hive TypeAdapter.
+import 'goal.dart';
+import 'api_service.dart'; // Core dependency
 
-/// A service class responsible for managing persistent storage operations for Goal objects using Hive.
-/// It uses a factory pattern to ensure the Hive box is open before the manager is used.
+/// A service class responsible for managing Goal objects via the remote API.
 class GoalManager {
-  // Constant string used as the name for the Hive box dedicated to goals.
-  static const String boxName = 'goalsBox';
-  // Late initialization for the actual Hive box instance.
-  late Box<Goal> _goalBox;
+  final ApiService _api = ApiService();
 
-  // Private constructor prevents direct instantiation, enforcing the factory pattern.
   GoalManager._();
 
-  /// Factory to initialize GoalManager with Hive box.
-  /// This asynchronous method ensures the required Hive box is open before returning the instance.
+  /// Factory to initialize GoalManager.
   static Future<GoalManager> create() async {
-    final manager = GoalManager._();
-    // Open the goals box. If it's already open, Hive returns the existing instance.
-    manager._goalBox = await Hive.openBox<Goal>(boxName);
-    return manager;
+    // No Hive box to open, initialization is instant.
+    return GoalManager._();
   }
 
-  //--------------------------------------------------------------------------------------------------
+  //----------------------------------------------------------------------
   // Public Accessors
-  //--------------------------------------------------------------------------------------------------
+  //----------------------------------------------------------------------
 
-  /// Getter that returns all Goal objects stored in the Hive box as a list.
-  List<Goal> get availableGoals => _goalBox.values.toList();
+  /// Asynchronously fetches all Goal objects from the remote API.
+  Future<List<Goal>> fetchAvailableGoals() async {
+    return _api.fetchGoals();
+  }
 
-  //--------------------------------------------------------------------------------------------------
+  //----------------------------------------------------------------------
   // CRUD Operations
-  //--------------------------------------------------------------------------------------------------
+  //----------------------------------------------------------------------
 
-  /// Add a new goal to the Hive box.
-  /// Uses a check to prevent adding goals with duplicate names.
-  Future<void> addGoal(Goal goal) async {
-    // Check if any existing goal has the same name.
-    if (!availableGoals.any((g) => g.name == goal.name)) {
-      // Use .add() for auto-incrementing integer keys.
-      await _goalBox.add(goal);
-    }
+  /// Add a new goal to the remote API.
+  Future<Goal> addGoal(Goal goal) async {
+    // The API service returns the created goal (with its new ID).
+    // Note: Duplicate checking should ideally be done by the API/SQL database constraint.
+    return await _api.addGoal(goal);
   }
 
-  /// Remove a goal from the Hive box by its unique name.
-  Future<void> removeGoal(String name) async {
-    // Find the internal Hive key (int) of the goal that matches the given name.
-    final key = _goalBox.keys.firstWhere(
-      (k) => (_goalBox.get(k)?.name == name),
-      // If no matching goal is found, orElse returns null.
-      orElse: () => null,
-    );
-    // If a key is found, delete the entry associated with that key.
-    if (key != null) await _goalBox.delete(key);
+  /// Remove a goal from the remote API using its ID.
+  Future<void> removeGoal(Goal goal) async {
+    if (goal.id == null) throw Exception('Cannot remove goal: ID is missing.');
+    await _api.deleteGoal(goal.id!);
   }
 
-  /// Retrieve a single goal by its name.
-  Goal? getGoalByName(String name) {
+  /// Retrieve a single goal by its name (using local filtering after fetch).
+  Future<Goal?> getGoalByName(String name) async {
+    final allGoals = await _api.fetchGoals();
     try {
-      // Use firstWhere to find the goal with the matching name.
-      return _goalBox.values.firstWhere((g) => g.name == name);
+      return allGoals.firstWhere((g) => g.name == name);
     } catch (_) {
-      // If firstWhere doesn't find a match, it throws a StateError, which is caught here.
       return null;
     }
   }
 
-  /// Update an existing goal by finding it with its old name and replacing it with the new object.
-  Future<void> updateGoal(String oldName, Goal updatedGoal) async {
-    // Find the internal Hive key of the goal to be updated.
-    final key = _goalBox.keys.firstWhere(
-      (k) => (_goalBox.get(k)?.name == oldName),
-      orElse: () => null,
-    );
-    // If the existing goal is found (key is not null), use .put() to replace the value at that key.
-    if (key != null) {
-      await _goalBox.put(key, updatedGoal);
-    }
+  /// Update an existing goal on the remote API.
+  Future<void> updateGoal(Goal updatedGoal) async {
+    await _api.updateGoal(updatedGoal);
   }
-
-  /// Clear all entries from the goal Hive box.
-  Future<void> clearAll() async => await _goalBox.clear();
 }

@@ -1,30 +1,37 @@
-// The comments in this code were written by an AI assistant.
+// calendar_app/lib/screens/goal_detail_screen.dart (Rewritten to use ApiService)
 
 import 'package:flutter/material.dart';
-import 'package:hive/hive.dart'; // Import Hive for local data access.
-import '../core/goal.dart'; // Import the Goal data model.
-import '../core/event.dart'; // Import the Event data model.
+import '../core/api_service.dart'; // Import ApiService for remote data access.
+import '../core/goal.dart'; // Import the API-backed Goal data model.
+import '../core/event.dart'; // Import the API-backed Event data model.
+import 'package:intl/intl.dart'; // For date formatting
 
 /// A screen that displays detailed progress for a single goal within a specific time frequency.
 class GoalDetailScreen extends StatefulWidget {
-  // The Goal object whose progress is being tracked.
+  // The Goal object whose progress is being tracked (from API fetch).
   final Goal goal;
   // The time window (Daily / Weekly / Monthly) for filtering related events.
-  final String frequency; 
+  final String frequency;
 
-  const GoalDetailScreen({super.key, required this.goal, required this.frequency});
+  const GoalDetailScreen({
+    super.key,
+    required this.goal,
+    required this.frequency,
+  });
 
   @override
   // Creates the state object for this screen.
   State<GoalDetailScreen> createState() => _GoalDetailScreenState();
 }
 
-/// The state class for GoalDetailScreen, managing event fetching and progress calculation.
+/// The state class for GoalDetailScreen, managing API access and progress calculation.
 class _GoalDetailScreenState extends State<GoalDetailScreen> {
-  // Reference to the Hive box for Events.
-  Box<Event>? _eventsBox;
+  // API Service instance.
+  final ApiService _apiService = ApiService();
+
   // List of events linked to the goal that fall within the specified frequency.
   List<Event> _goalEvents = [];
+  bool _loading = true;
 
   @override
   void initState() {
@@ -33,58 +40,91 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
     _loadEvents();
   }
 
-  /// Opens the events box and filters events relevant to the current goal and frequency.
+  /// Fetches all events from the API and filters them based on the current goal and frequency.
   Future<void> _loadEvents() async {
-    // Open or get the 'eventsBox'.
-    _eventsBox = Hive.isBoxOpen('eventsBox')
-        ? Hive.box<Event>('eventsBox')
-        : await Hive.openBox<Event>('eventsBox');
+    setState(() => _loading = true);
+    try {
+      // 1. Fetch all events from the API.
+      final allEvents = await _apiService.fetchEvents();
 
-    // Filter events: 1. Must have a linked goal. 2. Linked goal key must match. 3. Must be in the frequency period.
-    _goalEvents = _eventsBox!.values
-        .where((e) =>
-            e.linkedGoal != null &&
-            e.linkedGoal!.key == widget.goal.key &&
-            _isEventInFrequency(e, widget.frequency))
-        .toList();
-
-    // Trigger a rebuild to display the loaded events.
-    setState(() {});
+      // 2. Filter events:
+      _goalEvents = allEvents
+          .where(
+            (e) =>
+                // Must have a linked goal ID that matches the current goal's ID
+                e.linkedGoal?.id == widget.goal.id &&
+                // Must be in the frequency period
+                _isEventInFrequency(e, widget.frequency),
+          )
+          .toList();
+    } catch (e) {
+      print("Error loading events for goal detail: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text("Failed to load events.")));
+      }
+    } finally {
+      // Trigger a rebuild to display the loaded events.
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   /// Determines if a specific event falls within the current period defined by the frequency.
   bool _isEventInFrequency(Event e, String frequency) {
+    // Logic is identical to the Hive version, using Dart's DateTime.
     final now = DateTime.now();
+
+    // Normalize date by removing time components for comparison
+    DateTime normalize(DateTime dt) => DateTime(dt.year, dt.month, dt.day);
+
     switch (frequency) {
       case 'Daily':
-        // Check if event date is today.
-        return e.date.year == now.year &&
-            e.date.month == now.month &&
-            e.date.day == now.day;
+        return normalize(e.date).isAtSameMomentAs(normalize(now));
       case 'Weekly':
-        // Calculate the start and end of the current week.
-        final weekStart = now.subtract(Duration(days: now.weekday - 1));
-        final weekEnd = weekStart.add(const Duration(days: 6));
-        // Check if event date is within the current week's range (inclusive start, exclusive end).
+        final weekStart = normalize(
+          now.subtract(Duration(days: now.weekday - 1)),
+        );
+        final weekEnd = weekStart.add(
+          const Duration(days: 7),
+        ); // Exclusive end (next Monday)
         return e.date.isAfter(weekStart.subtract(const Duration(seconds: 1))) &&
-            e.date.isBefore(weekEnd.add(const Duration(days: 1)));
+            e.date.isBefore(weekEnd);
       case 'Monthly':
-        // Check if event date is within the current month and year.
         return e.date.year == now.year && e.date.month == now.month;
       default:
-        // Default to including the event if frequency is unknown (e.g., all time).
         return true;
     }
   }
 
-  /// Toggles the completion status of an event and persists the change to Hive.
-  void _toggleComplete(Event e) {
-    setState(() {
-      // Toggle the completion status (default to false if null).
+  /// Toggles the completion status of an event and persists the change via API.
+  Future<void> _toggleComplete(Event e) async {
+    // 1. Update the local model state immediately for fast feedback.
+    e.isCompleted = !(e.isCompleted ?? false);
+
+    // 2. Persist the change via API.
+    // NOTE: This assumes your API has an endpoint that can update the
+    // 'isCompleted' status of an Event. We are using the existing updateEvent,
+    // assuming it can handle the isCompleted field now added to the model.
+    try {
+      await _apiService.updateEvent(e);
+
+      // 3. Update the local state to refresh the UI (this is only needed if
+      // the API update was successful and we didn't use the optimistic update).
+      setState(() {});
+    } catch (error) {
+      print("Error updating event status via API: $error");
+      // Revert local state if API failed.
       e.isCompleted = !(e.isCompleted ?? false);
-      // Persist the change to the Hive database. Note: `e` must be a HiveObject to call `save()`.
-      e.save();
-    });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Failed to update event completion status."),
+          ),
+        );
+        setState(() {}); // Force UI refresh back to old state
+      }
+    }
   }
 
   /// Calculates the progress percentage (completed events / total events).
@@ -98,9 +138,18 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_loading) {
+      return Scaffold(
+        appBar: AppBar(
+          title: Text("${widget.goal.name} - ${widget.frequency}"),
+        ),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
     final progress = _calculateProgress();
-    // Set a minimum visible progress for the indicator to prevent it from disappearing completely.
-    final displayProgress = progress < 0.01 ? 0.01 : progress; 
+    // Set a minimum visible progress for the indicator.
+    final displayProgress = progress < 0.01 ? 0.01 : progress;
     // Format the progress as a percentage string.
     final displayText = "${(progress * 100).toInt()}%";
 
@@ -120,13 +169,19 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
                   CircularProgressIndicator(
                     value: displayProgress,
                     strokeWidth: 8,
+                    // Use the goal's color for the indicator
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      Color(widget.goal.color),
+                    ),
                   ),
                   // Display the percentage text over the indicator.
                   Center(
                     child: Text(
                       displayText,
                       style: const TextStyle(
-                          fontSize: 20, fontWeight: FontWeight.bold),
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                 ],
@@ -135,22 +190,47 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
           ),
           const SizedBox(height: 24),
           // Display the total count of relevant events.
-          Text("Total events: ${_goalEvents.length}",
-              style: const TextStyle(fontSize: 16)),
+          Text(
+            "Total events in this period: **${_goalEvents.length}**",
+            style: const TextStyle(fontSize: 16),
+          ),
           const SizedBox(height: 16),
           // Map the filtered events to interactive CheckboxListTile widgets.
-          ..._goalEvents.map((e) {
-            final isDone = e.isCompleted ?? false;
-            return CheckboxListTile(
-              title: Text(e.name),
-              // Subtitle shows the event's date and time range.
-              subtitle: Text(
-                  "${e.date.toLocal()}${e.endDateTime != null ? ' - ${e.endDateTime}' : ''}"),
-              value: isDone,
-              // Tapping toggles completion status via the private method.
-              onChanged: (_) => _toggleComplete(e),
-            );
-          }).toList(),
+          if (_goalEvents.isEmpty)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.only(top: 20.0),
+                child: Text(
+                  "No events linked to this goal in the selected time period.",
+                ),
+              ),
+            )
+          else
+            ..._goalEvents.map((e) {
+              final isDone = e.isCompleted ?? false;
+              // Formatter to show Date and Time correctly
+              final dateFormatter = DateFormat('MMM d, h:mm a');
+
+              String subtitleText = dateFormatter.format(e.date.toLocal());
+              if (e.endDateTime != null) {
+                subtitleText +=
+                    " - ${dateFormatter.format(e.endDateTime!.toLocal())}";
+              }
+
+              return CheckboxListTile(
+                title: Text(
+                  e.name,
+                  style: TextStyle(
+                    decoration: isDone ? TextDecoration.lineThrough : null,
+                  ),
+                ),
+                // Subtitle shows the event's date and time range.
+                subtitle: Text(subtitleText),
+                value: isDone,
+                // Tapping toggles completion status via the API update method.
+                onChanged: (newValue) => _toggleComplete(e),
+              );
+            }).toList(),
         ],
       ),
     );

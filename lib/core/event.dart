@@ -1,51 +1,61 @@
-// The comments in this code were written by an AI assistant.
-// This data model was originally designed for CSV storage and was reworked
-// by an AI to integrate with Hive, a fast NoSQL database for Flutter.
+// event.dart (Replaced Hive with JSON serialization)
+import 'goal.dart'; // Import the linked Goal model.
 
-import 'package:hive/hive.dart';
-// Import the linked Goal model.
-import 'goal.dart';
+/// A data model representing a calendar event, designed for API interaction.
+class Event {
+  // Use 'id' for the SQL primary key, which will be returned by the API.
+  final int? id;
 
-// Specifies the generated part file that Hive uses for adapters and type registration.
-part 'event.g.dart';
+  String name;
+  String description;
+  DateTime date;
+  DateTime? endDateTime;
+  bool allDay;
+  Goal? linkedGoal;
+  // NOTE: This field is REQUIRED for GoalDetailScreen functionality.
+  bool? isCompleted;
 
-/// A data model representing a calendar event, designed for persistent storage using Hive.
-@HiveType(typeId: 0) // Assigns a unique type ID for Hive to recognize this object type.
-class Event extends HiveObject {
-  // HiveField(0): Stores the event's start date and time.
-  @HiveField(0)
-  DateTime date; // The required start time of the event.
-
-  // HiveField(1): Stores the optional end date and time.
-  @HiveField(1)
-  DateTime? endDateTime; // Optional end time, null for open-ended or all-day events.
-
-  // HiveField(2): Stores the name of the event.
-  @HiveField(2)
-  String name; // The required, descriptive name of the event.
-
-  // HiveField(3): Stores a longer description of the event.
-  @HiveField(3)
-  String description; // Detailed description of the event or task.
-
-  // HiveField(4): Stores a reference to a linked Goal object.
-  @HiveField(4)
-  Goal? linkedGoal; // Optional link to a Goal this event contributes to.
-
-  // HiveField(5): Stores the completion status of the event/task.
-  @HiveField(5)
-  bool isCompleted = false; // Flag to track if the event/task has been finished.
-
-  // HiveField(6): Stores whether the event is an all-day event.
-  @HiveField(6)
-  bool allDay = false; // Flag indicating if the event spans a full day without specific times.
-
-  // Constructor for creating a new Event instance.
   Event({
-    required this.date,
-    this.endDateTime,
+    this.id,
     required this.name,
     required this.description,
+    required this.date,
+    this.endDateTime,
+    this.allDay = false,
     this.linkedGoal,
+    this.isCompleted = false, // Initialize as false
   });
+
+  // Factory to create an Event from a JSON map (API response).
+  factory Event.fromJson(Map<String, dynamic> json) {
+    return Event(
+      id: json['id'],
+      name: json['name'],
+      description: json['description'],
+      date: DateTime.parse(json['date']),
+      endDateTime: json['endDateTime'] != null
+          ? DateTime.parse(json['endDateTime'])
+          : null,
+      isCompleted: json['isCompleted'] ?? false,
+      allDay: json['allDay'] ?? false,
+      // Note: Goal linking will require fetching the goal object separately or embedding it in the API response.
+      // For now, we assume the API sends back the goal ID or null.
+      // The Flask API implementation determines how this link is handled.
+    );
+  }
+
+  // Method to convert the Event object to a JSON map for API POST/PUT requests.
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'description': description,
+      'date': date.toIso8601String(),
+      'endDateTime': endDateTime?.toIso8601String(),
+      'isCompleted': isCompleted,
+      'allDay': allDay,
+      // For linking, send the goal's ID, not the whole object.
+      'linked_goal_id': linkedGoal?.id,
+    };
+  }
 }
