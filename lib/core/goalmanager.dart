@@ -29,10 +29,10 @@ class GoalManager {
   //----------------------------------------------------------------------
 
   /// Add a new goal to the remote API.
-  Future<Goal> addGoal(Goal goal) async {
+  void addGoal(Goal goal) async {
     // The API service returns the created goal (with its new ID).
     // Note: Duplicate checking should ideally be done by the API/SQL database constraint.
-    return await _api.addGoal(goal);
+    _api.addGoal(goal);
   }
 
   /// Remove a goal from the remote API using its ID.

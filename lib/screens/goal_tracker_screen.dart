@@ -41,8 +41,21 @@ class _GoalTrackerScreenState extends State<GoalTrackerScreen> {
     setState(() => _loading = true);
     try {
       // Fetch data from the remote API.
-      _goals = await _apiService.fetchGoals();
-      _events = await _apiService.fetchEvents();
+      final fetchedEvents = _apiService.fetchEvents();
+      final fetchedGoals = _apiService.fetchGoals();
+
+      final results = await Future.wait([fetchedGoals, fetchedEvents]);
+
+      // 2. Update local state
+      _goals = results[0] as List<Goal>;
+      List<Event> events = results[1] as List<Event>;
+      
+      _events = await Future.wait(events.map((event) async {
+      if (event.goalId != null) {
+        event.linkedGoal = await _apiService.getGoalById(event.goalId!);
+      }
+      return event;
+    }));
     } catch (e) {
       print("Error loading data from API: $e");
       // Optionally show a user-friendly error message
@@ -83,28 +96,14 @@ class _GoalTrackerScreenState extends State<GoalTrackerScreen> {
       // AND fall within the frequency window.
       final events = _events.where(
         (e) =>
-            e.linkedGoal?.id == goal.id && // Use the API ID for linking
+            e.goalId == goal.id && // Use the API ID for linking
             _isEventInFrequency(e, frequency),
       );
 
       totalEvents += events.length;
-      // The API-backed Event model doesn't have an 'isCompleted' property by default.
-      // Assuming a simple way to track completion (e.g., all events count as "total" for now
-      // since your original logic assumed a completion status on the Event model).
-      // If you implement completion, this line needs to check that property.
-      // For now, we'll assume a goal is "completed" if it has any event scheduled for simplicity,
-      // but the original logic suggests completion tracking:
 
-      // Since the API-backed Event model is very simple, we will assume for calculation
-      // that we are simply tracking *event usage* in the period (i.e., totalEvents).
-      // To keep the progress calculation non-trivial, we'll need a mechanism
-      // for "completed" events, which is missing from the Event model structure we've used so far.
-
-      // *** WORKAROUND: For demo purposes, let's assume all events older than 1 day are "completed" ***
-      final now = DateTime.now();
       completedEvents += events
-          .where((e) => e.date.isBefore(now.subtract(const Duration(days: 1))))
-          .length;
+          .where((e) => e.isCompleted==true).length;
     }
 
     // Calculate progress: completed / total. Avoid division by zero.
@@ -159,18 +158,22 @@ class _GoalTrackerScreenState extends State<GoalTrackerScreen> {
       final frequency = entry.key;
 
       // Filter the goals to only include those that have linked events within the current period.
+      
+
       final goals = entry.value.where((goal) {
-        // Count how many events are linked to this goal's API ID and fall within the frequency.
+        // Count how many events are linked to this goal's API ID and fall within the frequency.  
         final usedCount = _events
             .where(
               (e) =>
-                  e.linkedGoal?.id == goal.id && // Use API ID
+                  e.goalId == goal.id && // Use API ID
                   _isEventInFrequency(e, frequency),
-            )
-            .length;
+            ).length;
+        final allEventsForGoal = _events.where((e) => e.goalId == goal.id);
+        final allCompleted = allEventsForGoal.isNotEmpty && allEventsForGoal.every((e) => e.isCompleted);
+
 
         // Only include the goal if it has been used at least once in this period.
-        return usedCount > 0;
+        return usedCount > 0 || allCompleted;
       }).toList();
 
       // Only add the frequency group if it contains active goals.
@@ -249,7 +252,7 @@ class _GoalTrackerScreenState extends State<GoalTrackerScreen> {
                 final usedCount = _events
                     .where(
                       (e) =>
-                          e.linkedGoal?.id == goal.id && // Use API ID
+                          e.goalId == goal.id && // Use API ID
                           _isEventInFrequency(e, frequency),
                     )
                     .length;

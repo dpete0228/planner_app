@@ -2,13 +2,14 @@
 
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:intl/intl.dart';
 import 'event.dart'; // Ensure these models have fromJson/toJson methods
 import 'goal.dart'; // Ensure these models have fromJson/toJson methods
 
 class ApiService {
   // IMPORTANT: Replace this with the actual base URL of your Flask API.
   // If testing on a physical device, use your local machine's IP (e.g., http://192.168.1.10:5000).
-  static const String _baseUrl = 'http://127.0.0.1:5000/api';
+  static const String _baseUrl = 'http://192.168.1.28:5000/api';
 
   final http.Client _client = http.Client();
   static const Map<String, String> _headers = {
@@ -31,8 +32,21 @@ class ApiService {
     }
   }
 
+  Future<Goal> getGoalById(int goal_id) async{
+    final response = await _client.get(
+      Uri.parse('$_baseUrl/goals/${goal_id}'),
+      headers: _headers,
+    );    if (response.statusCode == 200) {
+      final Map<String, dynamic> jsonMap = jsonDecode(response.body);
+      return Goal.fromJson(jsonMap);
+
+    } else {
+      throw Exception('Failed to load goal. Status: ${response.statusCode}');
+    }
+  }
+
   /// Adds a new Goal to the remote database.
-  Future<Goal> addGoal(Goal goal) async {
+  Future<void> addGoal(Goal goal) async {
     final response = await _client.post(
       Uri.parse('$_baseUrl/goals/add'),
       headers: _headers,
@@ -41,7 +55,7 @@ class ApiService {
 
     if (response.statusCode == 201) {
       // API should return the newly created goal with its assigned SQL ID.
-      return Goal.fromJson(jsonDecode(response.body));
+      goal.updateId(jsonDecode(response.body));
     } else {
       throw Exception(
         'Failed to add goal. Status: ${response.statusCode}, Body: ${response.body}',
@@ -89,12 +103,25 @@ class ApiService {
       // Ensure Event.fromJson can handle linked goal data or null.
       return eventJson.map((json) => Event.fromJson(json)).toList();
     } else {
+    throw Exception('Failed to load events. Status: ${response.statusCode}');
+    }
+  }
+
+  Future<List<Event>> fetchCurrentEvents(currentDate) async {
+    final DateFormat formatter = DateFormat('yyyy-MM-dd');
+    String formattedDate = formatter.format(currentDate);
+    final response = await _client.get(Uri.parse('$_baseUrl/events/current/${formattedDate}'));
+
+    if (response.statusCode == 200){
+      final List<dynamic> eventJson = jsonDecode(response.body);
+      return eventJson.map((json) => Event.fromJson(json)).toList();
+    } else {
       throw Exception('Failed to load events. Status: ${response.statusCode}');
     }
   }
 
   /// Adds a new Event to the remote database.
-  Future<Event> addEvent(Event event) async {
+  Future<void> addEvent(Event event) async {
     final response = await _client.post(
       Uri.parse('$_baseUrl/events/add'),
       headers: _headers,
@@ -103,7 +130,7 @@ class ApiService {
 
     if (response.statusCode == 201) {
       // API should return the newly created event with its assigned SQL ID.
-      return Event.fromJson(jsonDecode(response.body));
+      event.updateId(jsonDecode(response.body));
     } else {
       throw Exception(
         'Failed to add event. Status: ${response.statusCode}, Body: ${response.body}',

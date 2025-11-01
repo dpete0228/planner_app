@@ -45,14 +45,25 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
     setState(() => _loading = true);
     try {
       // 1. Fetch all events from the API.
-      final allEvents = await _apiService.fetchEvents();
+      final events = await _apiService.fetchEvents();
+
+
+      // 2. Update local state
+      List<Event> allEvents = events;
+      
+      allEvents = await Future.wait(events.map((event) async {
+      if (event.goalId != null) {
+        event.linkedGoal = await _apiService.getGoalById(event.goalId!);
+      }
+      return event;
+    }));
 
       // 2. Filter events:
       _goalEvents = allEvents
           .where(
             (e) =>
                 // Must have a linked goal ID that matches the current goal's ID
-                e.linkedGoal?.id == widget.goal.id &&
+                e.goalId == widget.goal.id &&
                 // Must be in the frequency period
                 _isEventInFrequency(e, widget.frequency),
           )
@@ -100,12 +111,10 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
   /// Toggles the completion status of an event and persists the change via API.
   Future<void> _toggleComplete(Event e) async {
     // 1. Update the local model state immediately for fast feedback.
-    e.isCompleted = !(e.isCompleted ?? false);
+    e.isCompleted = !(e.isCompleted);
 
     // 2. Persist the change via API.
-    // NOTE: This assumes your API has an endpoint that can update the
-    // 'isCompleted' status of an Event. We are using the existing updateEvent,
-    // assuming it can handle the isCompleted field now added to the model.
+
     try {
       await _apiService.updateEvent(e);
 
@@ -115,7 +124,7 @@ class _GoalDetailScreenState extends State<GoalDetailScreen> {
     } catch (error) {
       print("Error updating event status via API: $error");
       // Revert local state if API failed.
-      e.isCompleted = !(e.isCompleted ?? false);
+      e.isCompleted = !(e.isCompleted);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(

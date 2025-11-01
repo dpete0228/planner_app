@@ -54,21 +54,27 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadCalendar();
   }
 
-  // --- Data Loading and Synchronization ---
+  // --- Data Loading and Synchronization 
 
   /// Asynchronously fetches all events and goals from the API.
   Future<void> _loadCalendar() async {
     try {
       // 1. Fetch Goals and Events concurrently from the API
       final fetchedGoals = _apiService.fetchGoals();
-      final fetchedEvents = _apiService.fetchEvents();
+      final fetchedEvents = _apiService.fetchCurrentEvents(_currentDisplayedDate);
 
       final results = await Future.wait([fetchedGoals, fetchedEvents]);
 
       // 2. Update local state
       _allGoals = results[0] as List<Goal>;
-      _allEvents = results[1] as List<Event>;
-
+      List<Event> events = results[1] as List<Event>;
+      
+      _allEvents = await Future.wait(events.map((event) async {
+      if (event.goalId != null) {
+        event.linkedGoal = await _apiService.getGoalById(event.goalId!);
+      }
+      return event;
+    }));
       // 3. Populate EventController
       _refreshEventController();
 
@@ -189,6 +195,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (selectedDate != null) {
       setState(() => _currentDisplayedDate = selectedDate);
+      await _loadCalendar();
     }
   }
 
@@ -276,10 +283,11 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(width: 8),
             // "Today" button: Resets the calendar view to the current date.
             GestureDetector(
-              onTap: () {
+              onTap: () async{
                 setState(() {
                   _currentDisplayedDate = DateTime.now();
                 });
+                await _loadCalendar();
               },
               child: Container(
                 padding: const EdgeInsets.symmetric(
@@ -348,8 +356,9 @@ class _HomeScreenState extends State<HomeScreen> {
             DateFormat('EEEE, MMM d, yyyy').format(date),
         timeStringBuilder: (time, {secondaryDate}) =>
             DateFormat('h:mm a').format(time),
-        onPageChange: (date, pageIndex) {
+        onPageChange: (date, pageIndex) async{
           setState(() => _currentDisplayedDate = date);
+          await _loadCalendar();
         },
         // Callback when the user taps an empty time slot on the calendar grid.
         onDateTap: (date) async {

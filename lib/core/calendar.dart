@@ -23,12 +23,12 @@ class Calendar {
   //----------------------------------------------------------------------
 
   /// Adds a new event to the remote API.
-  Future<Event> addEvent({required Event event, Goal? linkedGoal}) async {
+  Future<void> addEvent({required Event event, Goal? linkedGoal}) async {
     // Assign goal and let the Event.toJson() handle sending the linked_goal_id.
     if (linkedGoal != null) event.linkedGoal = linkedGoal;
 
     // The API service returns the created event (with its new ID).
-    return await _api.addEvent(event);
+    await _api.addEvent(event);
   }
 
   /// Removes an event from the remote API by its ID.

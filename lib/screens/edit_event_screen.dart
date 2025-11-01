@@ -257,7 +257,7 @@ class _EditEventScreenState extends State<EditEventScreen> {
               // Linked Goal Dropdown
               DropdownButtonFormField<int?>(
                 // Use the Goal ID as the value.
-                value: _selectedGoal?.id,
+                initialValue: _selectedGoal?.id,
                 isExpanded: true,
                 decoration: const InputDecoration(
                   labelText: "Linked Goal",
@@ -352,7 +352,7 @@ class _EditEventScreenState extends State<EditEventScreen> {
         endDateTime = endDateTime.add(const Duration(days: 1));
       }
     }
-
+    print(_selectedGoal);
     // 2. Create the Event model instance for API
     final eventToSave = Event(
       // CRITICAL: Include the ID only if editing.
@@ -365,15 +365,13 @@ class _EditEventScreenState extends State<EditEventScreen> {
       allDay: _allDay,
     );
 
-    Event finalEvent;
 
     // 3. Perform CRUD Operation via API
     if (isEditing) {
       await _apiService.updateEvent(eventToSave);
-      finalEvent = eventToSave;
     } else {
       // API returns the newly created event with its assigned ID
-      finalEvent = await _apiService.addEvent(eventToSave);
+      await _apiService.addEvent(eventToSave);
     }
 
     // 4. Update the Calendar Controller for UI refresh
@@ -387,16 +385,16 @@ class _EditEventScreenState extends State<EditEventScreen> {
     // Add the final, up-to-date event data to the controller.
     widget.eventController.add(
       CalendarEventData<Event>(
-        date: finalEvent.date,
-        startTime: finalEvent.date,
-        endTime: finalEvent.endDateTime,
-        title: finalEvent.name,
-        description: finalEvent.description,
+        date: eventToSave.date,
+        startTime: eventToSave.date,
+        endTime: eventToSave.endDateTime,
+        title: eventToSave.name,
+        description: eventToSave.description,
         // CRITICAL: Attach the full Event model to the CalendarEventData
-        event: finalEvent,
+        event: eventToSave,
         // Use the Goal's color if linked, otherwise default to blue.
-        color: finalEvent.linkedGoal?.color != null
-            ? Color(finalEvent.linkedGoal!.color)
+        color: eventToSave.linkedGoal?.color != null
+            ? Color(eventToSave.linkedGoal!.color)
             : Colors.blue,
       ),
     );

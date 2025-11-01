@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 
 class Goal {
   // ID is now only used for the API and is nullable for new goals.
-  final int? id;
+  int? id;
 
   String name;
   String description;
@@ -26,7 +26,7 @@ class Goal {
 
   factory Goal.fromJson(Map<String, dynamic> json) {
     return Goal(
-      id: json['id'] as int?,
+      id: json['goal_id'] as int?,
       name: json['name'] as String,
       description: json['description'] as String,
       completionDate:
@@ -35,6 +35,12 @@ class Goal {
           : null,
       color: json['color'] as int? ?? Colors.blue.value,
     );
+  }
+
+
+  
+  void updateId(Map<String, dynamic> json){
+    id = json['goal_id'] as int?;
   }
 
   // --- JSON Serialization (Sending to API) ---
